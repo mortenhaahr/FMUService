@@ -28,11 +28,14 @@ class FMUInterface:
         self.fmu.exitInitializationMode()
 
     def callback_doStep(self, vars, time, step_time):
-        self.fmu.setReal(self.vrs['input'], vars)
+        self.fmu.setInteger([self.vrs['x1'],self.vrs['x2']], vars)
         self.fmu.doStep(currentCommunicationPoint=time, communicationStepSize=step_time)
 
+    def setValues(self, vars):
+        self.fmu.setInteger([self.vrs['x1'],self.vrs['x2']], vars)
+
     def getValues(self):
-        return self.fmu.getReal(self.vrs)
+        return [self.fmu.getInteger([self.vrs['x1'],self.vrs['x2'],self.vrs['_output']])]
     
     def close(self):
         self.fmu.terminate()
