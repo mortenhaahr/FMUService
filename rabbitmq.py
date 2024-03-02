@@ -4,42 +4,43 @@ import ssl as ssl_package
 
 from protocol import decode_json, encode_json
 
+
 class Rabbitmq:
-    def __init__(self, ip,
-                 port,
-                 username,
-                 password,
-                 vhost,
-                 exchange,
-                 type,
-                 ssl = None,
-                 ):
+    def __init__(
+        self,
+        ip,
+        port,
+        username,
+        password,
+        vhost,
+        exchange,
+        type,
+        ssl=None,
+    ):
         self._l = logging.getLogger("RabbitMQClass")
         self._l.setLevel(logging.DEBUG)
 
         self.vhost = vhost
         self.exchange_name = exchange
         self.exchange_type = type
-        
+
         credentials = pika.PlainCredentials(username, password)
         if ssl is None:
-            self.parameters = pika.ConnectionParameters(ip,
-                                                        port,
-                                                        vhost,
-                                                        credentials)
+            self.parameters = pika.ConnectionParameters(ip, port, vhost, credentials)
         else:
             ssl_context = ssl_package.SSLContext(getattr(ssl_package, ssl["protocol"]))
             ssl_context.set_ciphers(ssl["ciphers"])
 
-            self.parameters = pika.ConnectionParameters(ip,
-                                                        port,
-                                                        vhost,
-                                                        credentials,
-                                                        ssl_options=pika.SSLOptions(context=ssl_context))
+            self.parameters = pika.ConnectionParameters(
+                ip,
+                port,
+                vhost,
+                credentials,
+                ssl_options=pika.SSLOptions(context=ssl_context),
+            )
         self.connection = None
         self.channel = None
         self.queue_name = []
-        
 
     def __del__(self):
         self._l.debug("Deleting queues, close channel and connection")
@@ -60,19 +61,24 @@ class Rabbitmq:
         self.connection = pika.BlockingConnection(self.parameters)
         self._l.info("Connected.")
         self.channel = self.connection.channel()
-        self.channel.exchange_declare(exchange=self.exchange_name, exchange_type=self.exchange_type)
+        self.channel.exchange_declare(
+            exchange=self.exchange_name, exchange_type=self.exchange_type
+        )
 
     def send_message(self, routing_key, message, properties=None):
-        self.channel.basic_publish(exchange=self.exchange_name,
-                                   routing_key=routing_key,
-                                   body=encode_json(message),
-                                   properties=properties
-                                   )
+        self.channel.basic_publish(
+            exchange=self.exchange_name,
+            routing_key=routing_key,
+            body=encode_json(message),
+            properties=properties,
+        )
         self._l.debug(f"Message sent to {routing_key}.")
         self._l.debug(message)
 
     def get_message(self, queue_name):
-        (method, properties, body) = self.channel.basic_get(queue=queue_name, auto_ack=True)
+        (method, properties, body) = self.channel.basic_get(
+            queue=queue_name, auto_ack=True
+        )
 
         self._l.debug(f"Received message is {body} {method} {properties}")
         if body is not None:
@@ -88,7 +94,7 @@ class Rabbitmq:
         self.channel.queue_bind(
             exchange=self.exchange_name,
             queue=created_queue_name,
-            routing_key=routing_key
+            routing_key=routing_key,
         )
         self.queue_name.append(created_queue_name)
         self._l.info(f"Bound {routing_key}--> {created_queue_name}")
@@ -117,11 +123,10 @@ class Rabbitmq:
             body_json = decode_json(body)
             on_message_callback(ch, method, properties, body_json)
 
-        self.channel.basic_consume(queue=created_queue_name,
-                                   on_message_callback=decode_msg,
-                                   auto_ack=True)
+        self.channel.basic_consume(
+            queue=created_queue_name, on_message_callback=decode_msg, auto_ack=True
+        )
         return created_queue_name
 
     def start_consuming(self):
         self.channel.start_consuming()
-
