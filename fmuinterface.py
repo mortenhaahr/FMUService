@@ -1,7 +1,6 @@
 from fmpy import read_model_description, extract
 from fmpy.fmi2 import FMU2Slave
-
-# import numpy as np
+from collections import OrderedDict
 import shutil
 
 
@@ -12,9 +11,15 @@ class FMUInterface:
     def __init__(self, filename, start_time) -> None:
         model_description = read_model_description(filename)
 
-        self.vrs = {}
+        self.inputs = OrderedDict()
+        self.outputs = OrderedDict()
         for variable in model_description.modelVariables:
-            self.vrs[variable.name] = variable.valueReference
+            if variable.causality == "input":
+                self.inputs[variable.name] = variable
+            elif variable.causality == "output":
+                self.outputs[variable.name] = variable
+            else:
+                raise Exception("Unhandled causality type")
 
         self.unzipdir = extract(filename)
 
@@ -36,18 +41,36 @@ class FMUInterface:
     #   time: starting time
     #   step_time: simulation time step
     def callback_doStep(self, vars, time, step_time):
-        self.fmu.setInteger([self.vrs["x1"], self.vrs["x2"]], vars)
+        mappedInputs = self.mapInputsToValues(vars)
+
+        # Call the correct setMethod for each input type that was provided
+        for inputTypeDict in filter(lambda kv: kv[1] != {}, mappedInputs.items()):
+            setMethod = getattr(self.fmu, f"set{inputTypeDict[0]}")
+            fmuVarsDict = inputTypeDict[1]
+            setMethod(fmuVarsDict.keys(), fmuVarsDict.values())
+
         self.fmu.doStep(currentCommunicationPoint=time, communicationStepSize=step_time)
 
-    # Sets some values
-    #   vars: array
-    def setValues(self, vars):
-        self.fmu.setInteger([self.vrs["x1"], self.vrs["x2"]], vars)
+    def mapInputsToValues(self, values):
+        # TODO: Would be smarter to do this on __init__ and then only update the values...
+        res = {"Integer": {}, "Real": {}, "Boolean": {}, "String": {}}
+        for pair in zip(self.inputs.values(), values):
+            type = pair[0].type
+            valueReference = pair[0].valueReference
+            res[type][valueReference] = pair[1]
+        return res
 
     # Gets all the values
     def getValues(self):
+        # TODO: Hardcoded to m2.fmu...
         return [
-            self.fmu.getInteger([self.vrs["x1"], self.vrs["x2"], self.vrs["_output"]])
+            self.fmu.getInteger(
+                [
+                    self.inputs["x1"].valueReference,
+                    self.inputs["x2"].valueReference,
+                    self.outputs["_output"].valueReference,
+                ]
+            )
         ]
 
     # Closes the fmu (REQUIRED)
