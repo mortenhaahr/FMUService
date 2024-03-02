@@ -3,14 +3,19 @@ from pyhocon import ConfigFactory
 from fmuinterface import FMUInterface
 import logging
 
-f = FMUInterface(filename="m2.fmu", start_time=0)
+f = FMUInterface(fileName="m2.fmu", startTime=0)
+
+x2 = 100
 
 
 def on_read(ch, method, properties, body):
-    l = logging.getLogger("RabbitMQClass")
+    global x2
     val = int(body)
-    f.callback_doStep([val, 26], 0, 1)
-    print(f.getValues())
+    inputs = {"Integer": {"x1": val, "x2": x2}}
+    f.setInputs(inputs)
+    f.callback_doStep(0, 1)
+    print(f"Inputs: {inputs}. Outputs: {f.getValues()}")
+    x2 += 10
 
 
 def main():

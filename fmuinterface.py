@@ -1,6 +1,5 @@
 from fmpy import read_model_description, extract
 from fmpy.fmi2 import FMU2Slave
-from collections import OrderedDict
 import shutil
 
 
@@ -8,57 +7,59 @@ import shutil
 #          self.vrs with the variables references
 #          self.unzipdir with the pointer the unzipdirectory so it can close
 class FMUInterface:
-    def __init__(self, filename, start_time) -> None:
-        model_description = read_model_description(filename)
+    def __init__(self, fileName: str, startTime, instanceName="instance1") -> None:
+        # TODO: Support reference by valueReference instead
 
-        self.inputs = OrderedDict()
-        self.outputs = OrderedDict()
+        model_description = read_model_description(fileName)
+
+        self.variables = {
+            "input": {"Integer": {}, "Real": {}, "Boolean": {}, "String": {}},
+            "output": {"Integer": {}, "Real": {}, "Boolean": {}, "String": {}},
+        }
+        self.inputs = self.variables["input"]  # Reference to the inputs
+        self.outputs = self.variables["output"]  # Reference to the outputs
+
+        # Categorize variable based on causality, type and index by name
         for variable in model_description.modelVariables:
-            if variable.causality == "input":
-                self.inputs[variable.name] = variable
-            elif variable.causality == "output":
-                self.outputs[variable.name] = variable
-            else:
-                raise Exception("Unhandled causality type")
+            causality = variable.causality
+            if not (causality == "input" or causality == "output"):
+                raise Exception(
+                    "Unhandled causality type"
+                )  # Only support input and output for now
+            self.variables[causality][variable.type][variable.name] = variable
 
-        self.unzipdir = extract(filename)
+        self.unzipdir = extract(fileName)
 
         self.fmu = FMU2Slave(
             guid=model_description.guid,
             unzipDirectory=self.unzipdir,
             modelIdentifier=model_description.coSimulation.modelIdentifier,
-            instanceName="instance1",
+            instanceName=instanceName,
         )
 
         # Initialization of the FMU
         self.fmu.instantiate()
-        self.fmu.setupExperiment(startTime=start_time)
+        self.fmu.setupExperiment(startTime=startTime)
         self.fmu.enterInitializationMode()
         self.fmu.exitInitializationMode()
 
     # Does a step
-    #   vars: array of int
     #   time: starting time
     #   step_time: simulation time step
-    def callback_doStep(self, vars, time, step_time):
-        mappedInputs = self.mapInputsToValues(vars)
-
-        # Call the correct setMethod for each input type that was provided
-        for inputTypeDict in filter(lambda kv: kv[1] != {}, mappedInputs.items()):
-            setMethod = getattr(self.fmu, f"set{inputTypeDict[0]}")
-            fmuVarsDict = inputTypeDict[1]
-            setMethod(fmuVarsDict.keys(), fmuVarsDict.values())
-
+    def callback_doStep(self, time, step_time):
+        # TODO: Make sure currentCommunicationPoint makes sense
         self.fmu.doStep(currentCommunicationPoint=time, communicationStepSize=step_time)
 
-    def mapInputsToValues(self, values):
-        # TODO: Would be smarter to do this on __init__ and then only update the values...
-        res = {"Integer": {}, "Real": {}, "Boolean": {}, "String": {}}
-        for pair in zip(self.inputs.values(), values):
-            type = pair[0].type
-            valueReference = pair[0].valueReference
-            res[type][valueReference] = pair[1]
-        return res
+    def setInputs(self, vars: dict) -> None:
+        """Takes the nested dict `vars` and assigns the values to the FMU inputs.
+        vars: Nested dict with the format {type1: {varName1: value2, varName2: value2}, type2: {varname3: value3}}
+        """
+        for type, varsDict in vars.items():
+            setMethod = getattr(self.fmu, f"set{type}")
+            references = [
+                self.inputs[type][name].valueReference for name in varsDict.keys()
+            ]
+            setMethod(references, varsDict.values())
 
     # Gets all the values
     def getValues(self):
@@ -66,9 +67,9 @@ class FMUInterface:
         return [
             self.fmu.getInteger(
                 [
-                    self.inputs["x1"].valueReference,
-                    self.inputs["x2"].valueReference,
-                    self.outputs["_output"].valueReference,
+                    self.inputs["Integer"]["x1"].valueReference,
+                    self.inputs["Integer"]["x2"].valueReference,
+                    self.outputs["Integer"]["_output"].valueReference,
                 ]
             )
         ]
