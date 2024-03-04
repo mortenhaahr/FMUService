@@ -6,16 +6,31 @@ import logging
 f = FMUInterface(fileName="m2.fmu", startTime=0)
 
 x2 = 100
+i = 0
 
 
 def on_read(ch, method, properties, body):
-    global x2
+    global x2, i
+    steps = [
+        (10, False),
+        (10, False),
+        (10, False),
+        (-10, False),
+        (-10, True),
+        (-10, False),
+        (-10, False),
+    ]
+    if i >= len(steps):
+        print("Done! Closing")
+        exit(0)
     val = int(body)
-    inputs = {"Integer": {"x1": val, "x2": x2}}
+    x2 += steps[i][0]
+    inputs = {"Integer": {"x1": val, "x2": x2}, "Boolean": {"_soft_reset": steps[i][1]}}
     f.setInputs(inputs)
     f.callback_doStep(0, 1)
-    print(f"Inputs: {inputs}. Outputs: {f.getValues()}")
-    x2 += 10
+    res = f.getAllOutputs()
+    print(f"Inputs: {inputs}. Outputs: {res}")
+    i += 1
 
 
 def main():

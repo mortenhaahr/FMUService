@@ -54,25 +54,38 @@ class FMUInterface:
         """Takes the nested dict `vars` and assigns the values to the FMU inputs.
         vars: Nested dict with the format {type1: {varName1: value2, varName2: value2}, type2: {varname3: value3}}
         """
-        for type, varsDict in vars.items():
-            setMethod = getattr(self.fmu, f"set{type}")
+        for fmuType, varsDict in vars.items():
+            setMethod = getattr(self.fmu, f"set{fmuType}")
             references = [
-                self.inputs[type][name].valueReference for name in varsDict.keys()
+                self.inputs[fmuType][name].valueReference for name in varsDict.keys()
             ]
             setMethod(references, varsDict.values())
 
-    # Gets all the values
-    def getValues(self):
-        # TODO: Hardcoded to m2.fmu...
-        return [
-            self.fmu.getInteger(
-                [
-                    self.inputs["Integer"]["x1"].valueReference,
-                    self.inputs["Integer"]["x2"].valueReference,
-                    self.outputs["Integer"]["_output"].valueReference,
-                ]
-            )
-        ]
+    def getOutputs(self, vars: dict) -> dict:
+        """Takes the nested dict `vars` and gets the values to the FMU outputs.
+        vars: Nested dict with the format {type1: {varName1: value2, varName2: value2}, type2: {varname3: value3}}
+        The values will be overwritten with the updated values.
+        """
+        for fmuType, varsDict in vars.items():
+            getMethod = getattr(self.fmu, f"get{fmuType}")
+            # We need to keep the order between names and references (.items order is implementation specific) hence this inefficient code
+            name_reference_pairs = [
+                (name, self.outputs[fmuType][name].valueReference)
+                for name in varsDict.keys()
+            ]
+            results = getMethod([ref for _, ref in name_reference_pairs])
+            for (name, _), res in zip(name_reference_pairs, results):
+                vars[fmuType][name] = res
+        return vars
+
+    def getAllOutputs(self) -> dict:
+        """Returns the values of all the outputs"""
+        resultDict = {}
+        for fmuType, vars in self.outputs.items():
+            resultDict[fmuType] = {}
+            for varName in vars.keys():
+                resultDict[fmuType][varName] = None
+        return self.getOutputs(resultDict)
 
     # Closes the fmu (REQUIRED)
     def close(self):
