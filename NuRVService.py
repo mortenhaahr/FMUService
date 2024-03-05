@@ -3,34 +3,33 @@ from pyhocon import ConfigFactory
 from fmuinterface import FMUInterface
 import logging
 
-f = FMUInterface(fileName="m2.fmu", startTime=0)
-
-x2 = 100
-i = 0
+f = FMUInterface(fileName="anomaly_leads_to_energy_saving.fmu", startTime=0)
+anomaly = False
+anomaly_key = "lid_open"
+anomaly_topic = "incubator.diagnosis.plant.lidopen"
+energy_saving = False
+energy_saving_key = "energy_saver_on"
+energy_saving_topic = "incubator.energysaver.status"
 
 
 def on_read(ch, method, properties, body):
-    global x2, i
-    steps = [
-        (10, False),
-        (10, False),
-        (10, False),
-        (-10, False),
-        (-10, True),
-        (-10, False),
-        (-10, False),
-    ]
-    if i >= len(steps):
-        print("Done! Closing")
-        exit(0)
-    val = int(body)
-    x2 += steps[i][0]
-    inputs = {"Integer": {"x1": val, "x2": x2}, "Boolean": {"_soft_reset": steps[i][1]}}
+    global anomaly, energy_saving
+    if anomaly_key in body:
+        anomaly = body[anomaly_key]
+    if energy_saving_key in body:
+        energy_saving = body[energy_saving_key]
+
+    inputs = {
+        "Boolean": {
+            "anomaly": anomaly,
+            "energy_saving": energy_saving,
+            "_soft_reset": False,
+        },
+    }
     f.setInputs(inputs)
     f.callback_doStep(0, 1)
     res = f.getAllOutputs()
     print(f"Inputs: {inputs}. Outputs: {res}")
-    i += 1
 
 
 def main():
@@ -40,9 +39,9 @@ def main():
 
     rabbit = Rabbitmq(**config)
 
-    topic = "incubator.mock.hw.temperature.t1"  # Could also be .*
     rabbit.connect_to_server()
-    rabbit.subscribe(routing_key=topic, on_message_callback=on_read)
+    rabbit.subscribe(routing_key=anomaly_topic, on_message_callback=on_read)
+    rabbit.subscribe(routing_key=energy_saving_topic, on_message_callback=on_read)
     rabbit.start_consuming()
 
 
