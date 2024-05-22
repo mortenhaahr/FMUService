@@ -1,8 +1,7 @@
 import pika
 import logging
 import ssl as ssl_package
-
-from protocol import decode_json, encode_json
+import json
 
 
 class Rabbitmq:
@@ -69,7 +68,7 @@ class Rabbitmq:
         self.channel.basic_publish(
             exchange=self.exchange_name,
             routing_key=routing_key,
-            body=encode_json(message),
+            body=json.dumps(message).encode("ascii"),
             properties=properties,
         )
         self._l.debug(f"Message sent to {routing_key}.")
@@ -82,7 +81,7 @@ class Rabbitmq:
 
         self._l.debug(f"Received message is {body} {method} {properties}")
         if body is not None:
-            return decode_json(body)
+            return json.loads(body.decode("ascii"))
         else:
             return None
 
@@ -120,7 +119,7 @@ class Rabbitmq:
 
         # Register an intermediate function to decode the msg.
         def decode_msg(ch, method, properties, body):
-            body_json = decode_json(body)
+            body_json = json.loads(body.decode("ascii"))
             on_message_callback(ch, method, properties, body_json)
 
         self.channel.basic_consume(
